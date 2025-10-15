@@ -38,6 +38,7 @@ model RecurringTransaction {
   id          String   @id @default(cuid())
   amount      Float
   description String
+  type        TransactionType
   categoryId  String
   category    Category @relation(fields: [categoryId], references: [id])
   frequency   Frequency // ENUM para 'MONTHLY', 'YEARLY', etc.

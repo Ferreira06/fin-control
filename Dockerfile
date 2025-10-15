@@ -1,5 +1,6 @@
 # 1. Estágio de Instalação de Dependências
 FROM node:20-slim AS deps
+RUN apt-get update -y && apt-get install -y openssl
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
@@ -27,6 +28,6 @@ COPY --from=builder /app/node_modules ./node_modules
 
 USER node
 
-EXPOSE 3000
+EXPOSE 7779
 
 CMD ["npm", "start"]

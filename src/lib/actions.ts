@@ -4,7 +4,7 @@ import { z } from 'zod';
 import prisma from './prisma';
 import { revalidatePath } from 'next/cache';
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subMonths } from 'date-fns';
-import { Category, Frequency, InvestmentMovementType, InvestmentType, Prisma, Transaction } from '@prisma/client'; 
+import { Category, Frequency, InvestmentMovementType, InvestmentType, Prisma, Transaction, TransactionType } from '@prisma/client'; 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parse } from 'csv-parse/sync';
 
@@ -164,10 +164,10 @@ export async function getMonthlySummary({ from, to }: { from?: Date; to?: Date }
       if (!alreadyExists && rt.startDate <= endDate) {
         return {
           id: rt.id,
-          amount: -Math.abs(rt.amount),
+          amount: rt.type === 'EXPENSE' ? -Math.abs(rt.amount) : Math.abs(rt.amount),
           description: rt.description,
-          date: rt.startDate, 
-          type: 'EXPENSE' as const,
+          date: rt.startDate,
+          type: rt.type,
           createdAt: rt.createdAt,
           updatedAt: new Date(),
           categoryId: rt.categoryId,
@@ -279,12 +279,13 @@ export async function deleteCategory(prevState: DeleteState, formData: FormData)
 const recurringTransactionSchema = z.object({
   description: z.string().min(3, 'A descrição é obrigatória.'),
   amount: z.coerce.number().positive('O valor deve ser positivo.'),
+  type: z.nativeEnum(TransactionType), // <-- ADICIONE ESTA LINHA
   categoryId: z.string().cuid('Selecione uma categoria.'),
   frequency: z.nativeEnum(Frequency),
-  // CORREÇÃO: Removido o objeto inválido { required_error: '...' }
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional().nullable(),
 });
+
 
 // CORREÇÃO: A tipagem de 'errors' foi ajustada para o formato de .flatten()
 export type RecurringFormState = {
@@ -303,6 +304,7 @@ export async function addRecurringTransaction(prevState: RecurringFormState, for
   const parsedData = {
     description: formData.get('description'),
     amount: formData.get('amount'),
+    type: formData.get('type'),
     categoryId: formData.get('categoryId'),
     frequency: formData.get('frequency'),
     startDate: formData.get('startDate'),
@@ -392,15 +394,28 @@ export async function importTransactionsFromCSV(prevState: ImportFormState, form
 
     // Prompt Aprimorado: Pedindo explicitamente o ID.
     const prompt = `
-      Analise a lista de transações a seguir e categorize cada uma de acordo com as categorias disponíveis, retornando o ID da categoria.
-      As categorias disponíveis são: ${JSON.stringify(categoryMap)}.
-      Transações com valor positivo são 'INCOME', e as negativas são 'EXPENSE'.
-      
-      Sua resposta DEVE ser APENAS um array JSON válido, sem nenhum texto, explicação ou formatação markdown, como \`\`\`json.
-      O objeto de retorno para cada transação deve conter: description, amount, date (formato ISO), type, e categoryId.
+      Você é um assistente financeiro inteligente. Sua tarefa é analisar uma lista de transações de uma fatura de cartão de crédito, limpar os dados e categorizá-los com precisão.
 
-      Transações para processar:
+      **Instruções Gerais:**
+      1.  **Categorização:** Use a lista de categorias fornecida para atribuir o \`categoryId\` correto a cada transação. Seja o mais preciso possível. Se uma transação não se encaixar em nenhuma categoria, use o ID da categoria "Outras Despesas".
+      2.  **Tipo de Transação:** Transações com valor positivo são 'INCOME', e as negativas são 'EXPENSE'.
+      3.  **Formato da Data:** Retorne a data no formato ISO 8601 completo (YYYY-MM-DDTHH:mm:ss.sssZ).
+
+      **Instruções Específicas para o campo "description":**
+      * **Limpeza:** Remova textos genéricos e desnecessários como "Pagamento Aprovado", "Compra em", "Pag*".
+      * **Padronização:** Simplifique nomes de estabelecimentos. Por exemplo, "UBER *UBER *TRIP" deve se tornar "Uber", e "Ifood*Ifood" deve se tornar "iFood".
+      * **Clareza:** O nome deve ser limpo, curto e facilmente identificável pelo usuário. Por exemplo, uma transação "Pagamento Aprovado - Spotify AB" deve ter a descrição "Assinatura Spotify".
+      *  **Entendimento** O nome deve estar estruturado de uma forma que seja facil entender qual foi aquela receita ou despesa, com nomes ou identificadores que possam ajudar
+
+      **Categorias Disponíveis (use o ID):**
+      ${JSON.stringify(categoryMap)}
+
+      **Transações para Processar:**
       ${JSON.stringify(validRecords)}
+
+      **Formato de Saída Obrigatório:**
+      Sua resposta DEVE ser APENAS um array JSON válido, sem nenhum texto, explicação ou formatação markdown adicional, como \`\`\`json.
+      Cada objeto no array deve ter a seguinte estrutura: { description: string, amount: number, date: string, type: 'INCOME' | 'EXPENSE', categoryId: string }.
     `;
 
     console.log('Enviando prompt para a API do Gemini...');
@@ -685,14 +700,28 @@ export async function getAiInsights() {
     const thisMonthTxs = await prisma.transaction.findMany({ where: { date: { gte: thisMonthStart } }, include: { category: true } });
     const lastMonthTxs = await prisma.transaction.findMany({ where: { date: { gte: lastMonthStart, lte: lastMonthEnd } }, include: { category: true } });
 
-    const summarize = (txs: (Transaction & { category: Category })[]) => { /* ... (mesma lógica de antes) ... */ };
+    const summarize = (transactions: (Transaction & { category: Category })[]) => {
+      return transactions
+        .filter(t => t.type === 'EXPENSE')
+        .reduce((acc, t) => {
+          acc[t.category.name] = (acc[t.category.name] || 0) + Math.abs(t.amount);
+          return acc;
+        }, {} as { [key: string]: number });
+    };
+
     const thisMonthSummary = summarize(thisMonthTxs);
     const lastMonthSummary = summarize(lastMonthTxs);
 
-    const prompt = `... (mesmo prompt de antes) ...`; // O prompt que já definimos antes está bom
+    const prompt = `
+      Você é um consultor financeiro conciso. Analise os dados de gastos do mês atual e compare com o mês anterior.
+      Gastos do Mês Atual (parcial): ${JSON.stringify(thisMonthSummary)}
+      Gastos do Mês Anterior (completo): ${JSON.stringify(lastMonthSummary)}
+      Forneça até 3 insights curtos e acionáveis em um array JSON de strings. Dê prioridade a variações percentuais significativas ou gastos inesperados.
+      Exemplo de retorno: ["Seus gastos com 'Alimentação' aumentaram 30% em comparação com o mês passado.", "Você não teve gastos com 'Lazer' este mês.", "Considere revisar seus gastos na categoria 'Compras'."].
+      Sua resposta DEVE ser APENAS o array JSON.`;
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
     const result = await model.generateContent(prompt);
     const text = result.response.text().replace(/```json|```/g, '').trim();
     const insights = JSON.parse(text);
@@ -709,4 +738,19 @@ export async function generateInsightsAction() {
   // Chama a função de lógica que já tínhamos
   const result = await getAiInsights();
   return result;
+}
+
+
+export async function getRecurringBalance() {
+  const recurringTransactions = await prisma.recurringTransaction.findMany();
+  
+  const totalRecurringBalance = recurringTransactions.reduce((acc, transaction) => {
+    if (transaction.type === 'INCOME') {
+      return acc + transaction.amount;
+    } else {
+      return acc - transaction.amount;
+    }
+  }, 0);
+
+  return { totalRecurringBalance };
 }

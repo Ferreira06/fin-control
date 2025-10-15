@@ -5,7 +5,7 @@
 import { useFormState, useFormStatus } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { addRecurringTransaction, deleteRecurringTransaction } from '@/lib/actions';
-import { Category, RecurringTransaction, Frequency } from '@prisma/client';
+import { Category, RecurringTransaction, Frequency, TransactionType } from '@prisma/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CardContent, CardFooter } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '../ui/label';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 
 // Botões de Ação
 function SubmitButton() {
@@ -40,6 +41,8 @@ function RecurringDeleteForm({ id }: { id: string }) {
     </form>
   );
 }
+
+  const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
 export function RecurringManager({
   initialRecurringTransactions,
@@ -66,6 +69,19 @@ export function RecurringManager({
       {/* Formulário de Adição */}
       <form ref={formRef} action={formAction}>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-2 md:col-span-2 lg:col-span-3">
+            <Label>Tipo de Recorrência</Label>
+            <RadioGroup defaultValue={TransactionType.EXPENSE} name="type" className="flex gap-4">
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value={TransactionType.EXPENSE} id="r-expense" />
+                <Label htmlFor="r-expense">Despesa</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value={TransactionType.INCOME} id="r-income" />
+                <Label htmlFor="r-income">Receita</Label>
+              </div>
+            </RadioGroup>
+          </div>
           <div className="space-y-2"><Label htmlFor='description'>Descrição</Label><Input id='description' name="description" placeholder="Ex: Aluguel, Parcela do Carro" required /></div>
           <div className="space-y-2"><Label htmlFor='amount'>Valor (R$)</Label><Input id='amount' name="amount" type="number" step="0.01" placeholder="150.00" required /></div>
           <div className="space-y-2"><Label htmlFor='categoryId'>Categoria</Label><Select name="categoryId" required><SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger><SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div>
@@ -87,7 +103,9 @@ export function RecurringManager({
             {initialRecurringTransactions.map(rt => (
               <TableRow key={rt.id}>
                 <TableCell className='font-medium'>{rt.description} <br /><span className='text-xs text-muted-foreground'>{rt.category.name}</span></TableCell>
-                <TableCell>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rt.amount)}</TableCell>
+                <TableCell className={`font-bold ${rt.type === TransactionType.INCOME ? 'text-green-500' : 'text-red-500'}`}>
+                  {rt.type === TransactionType.INCOME ? '+' : '-'} {formatCurrency(rt.amount)}
+                </TableCell>
                 <TableCell>{rt.frequency}</TableCell>
                 <TableCell>{format(new Date(rt.startDate), 'dd/MM/yyyy')}</TableCell>
                 <TableCell>{rt.endDate ? format(new Date(rt.endDate), 'dd/MM/yyyy') : 'Contínuo'}</TableCell>

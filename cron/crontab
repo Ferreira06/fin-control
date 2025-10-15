@@ -1,6 +1,6 @@
 # file: cron/crontab
 
 # Executa todos os dias às 8:00 UTC (5:00 no seu fuso horário de Campinas)
-0 8 * * * curl -X GET -H "Authorization: Bearer ${CRON_SECRET}" http://app:3000/api/cron >> /proc/1/fd/1 2>> /proc/1/fd/2
+0 8 * * * curl -X GET -H "Authorization: Bearer ${CRON_SECRET}" http://app:7779/api/cron >> /proc/1/fd/1 2>> /proc/1/fd/2
 
 # Linha em branco no final é importante para o cron

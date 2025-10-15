@@ -49,9 +49,9 @@ export async function processRecurringTransactions() {
       if (!existingTx) {
         transactionsToCreate.push({
           description: rTx.description,
-          amount: -Math.abs(rTx.amount), // Assumindo que recorrências são despesas
+          amount: rTx.type === 'EXPENSE' ? -Math.abs(rTx.amount) : Math.abs(rTx.amount),
           date: today,
-          type: 'EXPENSE' as const,
+          type: rTx.type,
           categoryId: rTx.categoryId,
           recurringTransactionId: rTx.id,
         });

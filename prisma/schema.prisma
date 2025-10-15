@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  amount      Float
+  description String
+  date        DateTime
+  type        TransactionType // ENUM para 'INCOME' ou 'EXPENSE'
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  // Campo opcional para vincular a uma transação recorrente
+  recurringTransactionId String?
+  recurringTransaction   RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  transactions Transaction[]
+
+  RecurringTransaction RecurringTransaction[]
+}
+
+model RecurringTransaction {
+  id          String   @id @default(cuid())
+  amount      Float
+  description String
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  frequency   Frequency // ENUM para 'MONTHLY', 'YEARLY', etc.
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+
+  // Relação com as transações geradas
+  generatedTransactions Transaction[]
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}

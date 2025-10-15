@@ -1,0 +1,42 @@
+# file: docker-compose.yml
+
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fincontrol-app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      # A URL aponta para o serviço 'db' definido abaixo
+      DATABASE_URL: "postgresql://user:password@db:5432/fincontrol_db?schema=public"
+      # URL pública da aplicação
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+    networks:
+      - fincontrol-network
+
+  db:
+    image: postgres:15
+    container_name: fincontrol-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: fincontrol_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fincontrol-network
+
+volumes:
+  postgres_data:
+
+networks:
+  fincontrol-network:
+    driver: bridge

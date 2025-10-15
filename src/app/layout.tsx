@@ -18,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider
           attribute="class"
@@ -35,6 +35,12 @@ export default function RootLayout({
           <div className="flex items-center gap-4">
             <Link href="/" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
               Dashboard
+            </Link>
+            <Link href="/recurring" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
+              Recorrências
+            </Link>
+            <Link href="/investments" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
+              Investimentos
             </Link>
             <Link href="/config" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
               Configurações

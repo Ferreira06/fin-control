@@ -22,6 +22,8 @@ model Transaction {
   // Campo opcional para vincular a uma transação recorrente
   recurringTransactionId String?
   recurringTransaction   RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
+
+  InvestmentTransaction InvestmentTransaction[]
 }
 
 model Category {
@@ -57,4 +59,44 @@ enum Frequency {
   WEEKLY
   MONTHLY
   YEARLY
+}
+
+
+model Investment {
+  id          String   @id @default(cuid())
+  name        String   // Ex: "CDB Liquidez Diária"
+  type        InvestmentType // Ex: FIXED_INCOME
+  broker      String?  // Ex: "Nubank", "XP Investimentos"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions InvestmentTransaction[]
+}
+
+model InvestmentTransaction {
+  id        String   @id @default(cuid())
+  amount    Float    // Valor do aporte ou resgate
+  date      DateTime
+  type      InvestmentMovementType // CONTRIBUTION ou REDEMPTION
+  createdAt DateTime @default(now())
+
+  investmentId String
+  investment   Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  // Link para a transação principal que reflete no caixa
+  linkedTransactionId String?     @unique
+  linkedTransaction   Transaction? @relation(fields: [linkedTransactionId], references: [id], onDelete: SetNull)
+}
+
+enum InvestmentType {
+  FIXED_INCOME // Renda Fixa (CDB, Tesouro Direto)
+  STOCKS       // Ações
+  REITS        // Fundos Imobiliários (FIIs)
+  CRYPTO       // Criptomoedas
+  OTHER        // Outros
+}
+
+enum InvestmentMovementType {
+  CONTRIBUTION // Aporte
+  REDEMPTION   // Resgate
 }

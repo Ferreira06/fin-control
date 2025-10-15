@@ -10,11 +10,12 @@ import { format } from 'date-fns';
 import { useFormState, useFormStatus } from 'react-dom';
 import { deleteTransaction, DeleteState } from '@/lib/actions';
 import { Button } from '../ui/button';
-import { Trash2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useActionState, useEffect } from 'react';
 import { EditTransactionModal } from '../shared/EditTransactionModal';
+import { Trash2, Clock, ExternalLink  } from 'lucide-react'; 
+import Link from 'next/link';
 
-type TransactionWithCategory = Transaction & { category: Category };
+type TransactionWithCategory = Transaction & { category: Category; isProjected?: boolean };
 
 function DeleteButton() {
     const { pending } = useFormStatus();
@@ -25,10 +26,9 @@ function DeleteButton() {
     )
 }
 
-// --- NOVO COMPONENTE: Formulário para deletar uma transação ---
 function TransactionDeleteForm({ transactionId }: { transactionId: string }) {
   const initialState: DeleteState = { success: false, message: '' };
-  const [state, formAction] = useFormState(deleteTransaction, initialState);
+  const [state, formAction] = useActionState(deleteTransaction, initialState);
 
   useEffect(() => {
     if (!state.success && state.message) {
@@ -50,7 +50,7 @@ export function RecentTransactions({
   transactions, 
   categories 
 }: { 
-  transactions: (Transaction & { category: Category })[];
+  transactions: TransactionWithCategory[];
   categories: Category[];
 }) {
   const formatCurrency = (value: number) => {
@@ -63,7 +63,12 @@ export function RecentTransactions({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Últimas Transações</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Últimas Transações</CardTitle>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/transactions">Ver Todas</Link>
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <Table>
@@ -78,16 +83,26 @@ export function RecentTransactions({
           </TableHeader>
           <TableBody>
             {transactions.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell className="font-medium">{t.description}</TableCell>
+              <TableRow key={t.id} className={t.isProjected ? 'opacity-80' : ''}>
+                <TableCell className="font-medium flex items-center gap-2">
+                  {t.isProjected && <Clock className="h-4 w-4" />}
+                  {t.description}
+                </TableCell>
                 <TableCell><Badge variant="outline">{t.category.name}</Badge></TableCell>
-                <TableCell>{format(new Date(t.date), 'dd/MM/yyyy')}</TableCell>
+                <TableCell>{t.isProjected ? 'Pendente' : format(new Date(t.date), 'dd/MM/yyyy')}</TableCell>
                 <TableCell className={`text-right font-bold ${t.type === 'INCOME' ? 'text-green-500' : 'text-red-500'}`}>
                   {formatCurrency(t.amount)}
                 </TableCell>
                 <TableCell className="flex justify-center items-center gap-1">
-                    <EditTransactionModal transaction={t} categories={categories} />
-                    <TransactionDeleteForm transactionId={t.id} />
+                    {/* Desabilita os botões para despesas projetadas, pois elas não podem ser editadas/deletadas daqui */}
+                    {!t.isProjected ? (
+                        <>
+                            <EditTransactionModal transaction={t} categories={categories} />
+                            <TransactionDeleteForm transactionId={t.id} />
+                        </>
+                    ) : (
+                        <Link href="/recurring" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"><ExternalLink></ExternalLink></Link>
+                    )}
                 </TableCell>
               </TableRow>
             ))}

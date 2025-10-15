@@ -34,6 +34,18 @@ services:
     networks:
       - fincontrol-network
 
+  cron:
+    build:
+      context: ./cron
+    container_name: fincontrol-cron
+    depends_on:
+      - app
+    environment:
+      # Passa o segredo para dentro do contêiner do cron
+      - CRON_SECRET=${CRON_SECRET}
+    networks:
+      - fincontrol-network
+
 volumes:
   postgres_data:
 

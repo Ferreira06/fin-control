@@ -42,6 +42,9 @@ export default function RootLayout({
             <Link href="/investments" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
               Investimentos
             </Link>
+            <Link href="/reports" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
+              Relatórios
+            </Link>
             <Link href="/config" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">
               Configurações
             </Link>

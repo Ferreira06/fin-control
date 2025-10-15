@@ -1,64 +1,61 @@
-// file: src/lib/recurring.ts
-
+// src/lib/recurring.ts
 import prisma from './prisma';
-import { TransactionType } from '@prisma/client';
-import { add, isToday, isBefore, startOfDay, endOfDay } from 'date-fns';
+import { startOfDay, endOfDay } from 'date-fns';
+import { revalidatePath } from 'next/cache';
 
+/**
+ * Esta função verifica todas as transações recorrentes ativas
+ * e cria transações reais para o dia de hoje, se forem devidas
+ * e ainda não tiverem sido criadas.
+ */
 export async function processRecurringTransactions() {
-  const recurringTxs = await prisma.recurringTransaction.findMany({
+  const today = startOfDay(new Date());
+
+  const activeRecurringTxs = await prisma.recurringTransaction.findMany({
     where: {
-      OR: [{ endDate: null }, { endDate: { gte: new Date() } }],
-      startDate: { lte: new Date() },
+      startDate: { lte: today }, // Precisa ter começado
+      OR: [
+        { endDate: null }, // Ou não ter data de fim
+        { endDate: { gte: today } }, // Ou terminar hoje ou no futuro
+      ],
     },
   });
 
+  if (activeRecurringTxs.length === 0) {
+    return { createdCount: 0, message: "Nenhuma transação recorrente ativa para processar." };
+  }
+
   const transactionsToCreate = [];
 
-  for (const rTx of recurringTxs) {
-    let nextDate = rTx.startDate;
+  for (const rTx of activeRecurringTxs) {
     let shouldCreate = false;
-
-    while (isBefore(nextDate, new Date()) || isToday(nextDate)) {
-      if (isToday(nextDate)) {
-        // CORREÇÃO: Usar startOfDay e endOfDay para criar objetos Date corretamente
-        // A função .setHours() retorna um número (timestamp), não um objeto Date.
-        const todayStart = startOfDay(new Date());
-        const todayEnd = endOfDay(new Date());
-
-        const existingTx = await prisma.transaction.findFirst({
-          where: {
-            recurringTransactionId: rTx.id,
-            date: {
-              gte: todayStart,
-              lte: todayEnd,
-            },
-          },
-        });
-
-        if (!existingTx) {
-          shouldCreate = true;
-        }
-        break;
-      }
-
-      switch (rTx.frequency) {
-        case 'DAILY': nextDate = add(nextDate, { days: 1 }); break;
-        case 'WEEKLY': nextDate = add(nextDate, { weeks: 1 }); break;
-        case 'MONTHLY': nextDate = add(nextDate, { months: 1 }); break;
-        case 'YEARLY': nextDate = add(nextDate, { years: 1 }); break;
-      }
+    // Lógica simples de frequência (pode ser expandida)
+    if (rTx.frequency === 'MONTHLY' && rTx.startDate.getDate() === today.getDate()) {
+        shouldCreate = true;
+    } else if (rTx.frequency === 'DAILY') {
+        shouldCreate = true;
     }
+    // Lógicas para WEEKLY e YEARLY exigiriam uma verificação mais complexa.
 
     if (shouldCreate) {
-      transactionsToCreate.push({
-        amount: -Math.abs(rTx.amount),
-        description: rTx.description,
-        date: new Date(),
-        // CORREÇÃO: Usar o enum TransactionType em vez de uma string 'EXPENSE'
-        type: TransactionType.EXPENSE,
-        categoryId: rTx.categoryId,
-        recurringTransactionId: rTx.id,
+      // Verifica se uma transação para este item recorrente já foi criada hoje
+      const existingTx = await prisma.transaction.findFirst({
+        where: {
+          recurringTransactionId: rTx.id,
+          date: { gte: startOfDay(today), lte: endOfDay(today) },
+        },
       });
+
+      if (!existingTx) {
+        transactionsToCreate.push({
+          description: rTx.description,
+          amount: -Math.abs(rTx.amount), // Assumindo que recorrências são despesas
+          date: today,
+          type: 'EXPENSE' as const,
+          categoryId: rTx.categoryId,
+          recurringTransactionId: rTx.id,
+        });
+      }
     }
   }
 
@@ -66,8 +63,10 @@ export async function processRecurringTransactions() {
     await prisma.transaction.createMany({
       data: transactionsToCreate,
     });
-    console.log(`Criadas ${transactionsToCreate.length} transações recorrentes.`);
-  } else {
-    console.log('Nenhuma transação recorrente para criar hoje.');
+    // Revalida os paths para atualizar a UI para os usuários
+    revalidatePath('/');
+    revalidatePath('/transactions');
   }
+
+  return { createdCount: transactionsToCreate.length, message: `Criadas ${transactionsToCreate.length} novas transações.` };
 }

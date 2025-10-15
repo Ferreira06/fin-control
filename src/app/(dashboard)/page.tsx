@@ -8,6 +8,8 @@ import { RecentTransactions } from '@/components/dashboard/RecentTransactions';
 import prisma from '@/lib/prisma';
 import { DateFilter } from '@/components/dashboard/DateFilter';
 import { ImportModal } from '@/components/shared/ImportModal';
+import { Suspense } from 'react';
+import { AiInsightsCard } from '@/components/dashboard/AiInsightsCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +64,9 @@ export default async function DashboardPage({
             categories={categories}
           />
         </div>
+      </div>
+      <div className="grid gap-8 mt-8">
+      <AiInsightsCard />
       </div>
     </main>
   );

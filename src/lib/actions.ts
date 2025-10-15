@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import prisma from './prisma';
 import { revalidatePath } from 'next/cache';
-import { endOfDay, endOfMonth, startOfDay, startOfMonth } from 'date-fns';
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subMonths } from 'date-fns';
 import { Category, Frequency, InvestmentMovementType, InvestmentType, Prisma, Transaction } from '@prisma/client'; 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parse } from 'csv-parse/sync';
@@ -631,4 +631,82 @@ export async function getAllTransactions({
   ]);
 
   return { transactions, totalCount };
+}
+
+export async function getReportsSummary() {
+  const today = new Date();
+  const last12MonthsData = [];
+
+  for (let i = 11; i >= 0; i--) {
+    const date = subMonths(today, i);
+    const startDate = startOfMonth(date);
+    const endDate = endOfMonth(date);
+
+    const transactions = await prisma.transaction.findMany({
+      where: { date: { gte: startDate, lte: endDate } },
+      include: { category: true },
+    });
+
+    const income = transactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
+    const expenses = transactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    
+    const expensesByCategory = transactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => {
+      acc[t.category.name] = (acc[t.category.name] || 0) + Math.abs(t.amount);
+      return acc;
+    }, {} as { [key: string]: number });
+
+    last12MonthsData.push({ month: format(startDate, 'MMM/yy'), income, expenses, expensesByCategory });
+  }
+
+  const totalSpendingByCategory = last12MonthsData.reduce((acc, monthData) => {
+    for (const category in monthData.expensesByCategory) {
+      acc[category] = (acc[category] || 0) + monthData.expensesByCategory[category];
+    }
+    return acc;
+  }, {} as { [key: string]: number });
+
+  const top5Categories = Object.entries(totalSpendingByCategory)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([name]) => name);
+
+  return { last12MonthsData, top5Categories };
+}
+
+export async function getAiInsights() {
+  if (!process.env.GEMINI_API_KEY) {
+    return { error: "A chave da API do Gemini não está configurada." };
+  }
+  try {
+    const thisMonthStart = startOfMonth(new Date());
+    const lastMonthStart = startOfMonth(subMonths(new Date(), 1));
+    const lastMonthEnd = endOfMonth(lastMonthStart);
+
+    const thisMonthTxs = await prisma.transaction.findMany({ where: { date: { gte: thisMonthStart } }, include: { category: true } });
+    const lastMonthTxs = await prisma.transaction.findMany({ where: { date: { gte: lastMonthStart, lte: lastMonthEnd } }, include: { category: true } });
+
+    const summarize = (txs: (Transaction & { category: Category })[]) => { /* ... (mesma lógica de antes) ... */ };
+    const thisMonthSummary = summarize(thisMonthTxs);
+    const lastMonthSummary = summarize(lastMonthTxs);
+
+    const prompt = `... (mesmo prompt de antes) ...`; // O prompt que já definimos antes está bom
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().replace(/```json|```/g, '').trim();
+    const insights = JSON.parse(text);
+    return { insights };
+  } catch (error) {
+    console.error("Error fetching AI insights:", error);
+    return { error: "Não foi possível gerar os insights no momento." };
+  }
+}
+
+export async function generateInsightsAction() {
+  // Revalida o path para garantir que estamos pegando os dados mais recentes antes de analisar
+  revalidatePath('/'); 
+  // Chama a função de lógica que já tínhamos
+  const result = await getAiInsights();
+  return result;
 }

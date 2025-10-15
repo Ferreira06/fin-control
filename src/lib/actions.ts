@@ -397,7 +397,7 @@ export async function importTransactionsFromCSV(prevState: ImportFormState, form
       Você é um assistente financeiro inteligente. Sua tarefa é analisar uma lista de transações de uma fatura de cartão de crédito, limpar os dados e categorizá-los com precisão.
 
       **Instruções Gerais:**
-      1.  **Categorização:** Use a lista de categorias fornecida para atribuir o \`categoryId\` correto a cada transação. Seja o mais preciso possível. Se uma transação não se encaixar em nenhuma categoria, use o ID da categoria "Outras Despesas".
+      1.  **Categorização:** Use a lista de categorias fornecida para atribuir o \`categoryId\` correto a cada transação. Seja o mais preciso possível. Se uma transação não se encaixar em nenhuma categoria, use o ID da categoria "Outras Despesas" ou "Outras Receitas", ao depender do tipo.
       2.  **Tipo de Transação:** Transações com valor positivo são 'INCOME', e as negativas são 'EXPENSE'.
       3.  **Formato da Data:** Retorne a data no formato ISO 8601 completo (YYYY-MM-DDTHH:mm:ss.sssZ).
 

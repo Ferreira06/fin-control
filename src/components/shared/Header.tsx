@@ -1,120 +1,72 @@
-// file: src/components/shared/Header.tsx
-'use client';
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Menu, Landmark, Settings } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "./theme-toggle";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { auth } from "@/lib/auth"; 
+import { UserNav } from "./UserNav";
+import { LayoutDashboard, ArrowRightLeft, PieChart, TrendingUp, Wallet } from "lucide-react";
 
-const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/transactions", label: "Transações" },
-  { href: "/recurring", label: "Recorrências" },
-  { href: "/investments", label: "Investimentos" },
-  { href: "/reports", label: "Relatórios" },
-];
+export default async function Header() {
+  const session = await auth();
 
-const configItem = { href: "/config", label: "Configurações" };
-
-export function Header() {
-  const pathname = usePathname();
-  const [isSheetOpen, setSheetOpen] = useState(false);
+  // Links de navegação centralizados para fácil manutenção
+  const navLinks = [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/transactions", label: "Transações", icon: ArrowRightLeft },
+    { href: "/accounts", label: "Contas", icon: Wallet }, // Novo Link
+    { href: "/investments", label: "Investimentos", icon: TrendingUp },
+    { href: "/reports", label: "Relatórios", icon: PieChart },
+  ];
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      {/* Container principal com padding e sem max-width do 'container' */}
-      <div className="flex h-14 items-center px-4 md:px-6">
-        {/* --- GRUPO ESQUERDO: Logo --- */}
-        <div className="flex items-center">
-          <Link href="/" className="flex items-center space-x-2">
-            <Landmark className="h-6 w-6" />
-            <span className="hidden font-bold sm:inline-block">FinControl</span>
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container mx-auto flex h-16 items-center justify-between px-4">
+        
+        {/* Logo Area */}
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2 group">
+             <div className="bg-primary/10 p-2 rounded-lg group-hover:bg-primary/20 transition-colors">
+                <TrendingUp className="h-5 w-5 text-primary" />
+             </div>
+             <span className="font-bold text-lg tracking-tight hidden md:inline-block">
+               Fin<span className="text-primary">Control</span>
+             </span>
           </Link>
+
+          {/* Navegação Desktop */}
+          <nav className="hidden md:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <Button 
+                key={link.href} 
+                variant="ghost" 
+                asChild 
+                className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-9 px-4 text-sm font-medium"
+              >
+                <Link href={link.href}>
+                  {link.label}
+                </Link>
+              </Button>
+            ))}
+          </nav>
         </div>
 
-        {/* --- GRUPO CENTRAL: Navegação (usa flex-1 para empurrar os outros grupos para as pontas) --- */}
-        <nav className="relative hidden items-center justify-center flex-1 gap-1 text-sm md:flex">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "relative transition-colors px-3 py-1.5",
-                pathname === item.href
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground/80"
-              )}
-            >
-              {item.label}
-              {pathname === item.href && (
-                <motion.span
-                  layoutId="underline"
-                  className="absolute inset-0 z-[-1] rounded-md bg-accent"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
-            </Link>
-          ))}
-        </nav>
+        {/* Ações da Direita */}
+        <div className="flex items-center gap-2 md:gap-4">
+          <ThemeToggle />
+          
+          <div className="h-6 w-px bg-border hidden md:block" /> {/* Separador */}
 
-        {/* --- GRUPO DIREITO: Ações e Menu Mobile --- */}
-        <div className="flex items-center justify-end gap-2">
-          {/* Ações Desktop */}
-          <div className="hidden md:flex items-center">
-            <Button asChild variant="ghost" size="sm">
-              <Link href={configItem.href}>
-                <Settings className="h-4 w-4 mr-2" />
-                {configItem.label}
-              </Link>
-            </Button>
-            <ThemeToggle />
-          </div>
-
-          {/* Menu Mobile (Hamburger) */}
-          <Sheet open={isSheetOpen} onOpenChange={setSheetOpen}>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden"
-                aria-label="Abrir menu"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-[240px]">
-              <Link href="/" className="mr-6 flex items-center space-x-2 mb-6">
-                <Landmark className="h-6 w-6" />
-                <span className="font-bold">FinControl</span>
-              </Link>
-              <nav className="flex flex-col gap-3">
-                {[...navItems, configItem].map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setSheetOpen(false)}
-                    className={cn(
-                      "transition-colors hover:text-foreground/90 text-lg",
-                      pathname === item.href
-                        ? "text-foreground font-semibold"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-               <div className="absolute bottom-4 right-4">
-                <ThemeToggle />
-              </div>
-            </SheetContent>
-          </Sheet>
+          {session?.user ? (
+            <UserNav user={session.user} />
+          ) : (
+            <div className="flex gap-2">
+               <Button variant="ghost" size="sm" asChild>
+                 <Link href="/login">Entrar</Link>
+               </Button>
+               <Button size="sm" asChild>
+                 <Link href="/register">Cadastrar</Link>
+               </Button>
+            </div>
+          )}
         </div>
       </div>
     </header>

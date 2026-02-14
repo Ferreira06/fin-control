@@ -1,22 +1,26 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Header } from '@/components/shared/Header';
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+interface AppLayoutProps {
+  children: React.ReactNode;
+  header: React.ReactNode; 
+}
+
+export default function AppLayout({ children, header }: AppLayoutProps) {
   const pathname = usePathname();
-  // Lista de rotas onde o layout padrão (Header + Container) NÃO deve aparecer
+  // Lista de rotas onde o Header NÃO deve aparecer
   const isAuthPage = pathname === '/login' || pathname === '/register';
 
   if (isAuthPage) {
-    // Retorna o conteúdo "cru" (full screen) para login/register
+    // Retorna apenas o conteúdo (sem header)
     return <>{children}</>;
   }
 
-  // Retorna o layout padrão do dashboard
+  // Renderiza o header passado via prop e o conteúdo
   return (
     <>
-      <Header />
+      {header}
       <main className="container mx-auto p-4 space-y-8">
         {children}
       </main>

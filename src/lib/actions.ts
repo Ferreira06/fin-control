@@ -5,7 +5,7 @@ import { z } from 'zod';
 import prisma from './prisma';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth'; // <-- IMPORTANTE: Autenticação
-import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subMonths } from 'date-fns';
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subMonths, addMonths, addYears, addWeeks, addDays } from 'date-fns';
 import { Category, Frequency, InvestmentMovementType, InvestmentType, Prisma, Transaction, TransactionType } from '@prisma/client'; 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parse } from 'csv-parse/sync';
@@ -323,65 +323,36 @@ export async function getMonthlySummary({ from, to }: { from?: Date; to?: Date }
   const startDate = from ? startOfDay(from) : startOfMonth(new Date());
   const endDate = to ? endOfDay(to) : endOfMonth(new Date());
 
-  const realTransactions = await prisma.transaction.findMany({
+  const transactions = await prisma.transaction.findMany({
     where: { 
-      userId: session.user.id, // <-- CORREÇÃO: Escopo de usuário
+      userId: session.user.id,
       date: { gte: startDate, lte: endDate } 
     },
-    include: { category: true, account: true, tags: true, invoice: {
-          include: { creditCard: true }
-        },
-        attachments: {
-        select: {
-          id: true,
-          fileName: true,
-          mimeType: true,
-          size: true
-        }
-      } },
-      
-  });
-
-  const recurringTransactions = await prisma.recurringTransaction.findMany({
-    where: {
-      userId: session.user.id, // <-- CORREÇÃO
-      startDate: { lte: endDate },
-      OR: [{ endDate: null }, { endDate: { gte: startDate } }],
+    include: { 
+      category: true, 
+      account: true, 
+      tags: true, 
+      invoice: { include: { creditCard: true } },
+      attachments: { select: { id: true, fileName: true, mimeType: true, size: true } } 
     },
-    include: { category: true },
+    orderBy: { date: 'desc' }
   });
 
-  const simulatedTransactions = recurringTransactions
-    .map((rt) => {
-      const alreadyExists = realTransactions.some((t) => t.recurringTransactionId === rt.id);
-      if (!alreadyExists && rt.startDate <= endDate) {
-        return {
-          id: rt.id,
-          userId: rt.userId,
-          amount: rt.type === 'EXPENSE' ? -Math.abs(rt.amount) : Math.abs(rt.amount),
-          description: rt.description,
-          date: rt.startDate,
-          type: rt.type,
-          createdAt: rt.createdAt,
-          updatedAt: new Date(),
-          categoryId: rt.categoryId,
-          category: rt.category,
-          recurringTransactionId: rt.id,
-          isProjected: true,
-          status: 'PLANNED' as const
-        };
-      }
-      return null;
-    }).filter(Boolean) as (Transaction & { category: Category; isProjected?: boolean })[];
-
-  const allTransactions = [...realTransactions, ...simulatedTransactions].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
-
-  const income = allTransactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
-  const expenses = allTransactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  // O Dashboard soma tudo (CONFIRMADOS e PLANEJADOS) para te dar a visão real do mês
+  const income = transactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
+  const expenses = transactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Math.abs(t.amount), 0);
   
-  return { transactions: allTransactions, income, expenses: Math.abs(expenses), balance: income + expenses };
+  // NOVO: Agrupa o quanto foi gasto em cada categoria neste mês
+  const spentByCategory = transactions
+    .filter(t => t.type === 'EXPENSE')
+    .reduce((acc, t) => {
+      if (t.categoryId) {
+        acc[t.categoryId] = (acc[t.categoryId] || 0) + Math.abs(t.amount);
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+  return { transactions, income, expenses, balance: income - expenses, spentByCategory }; // Retorna o spentByCategory
 }
 
 // ============================================================================
@@ -440,11 +411,6 @@ export async function deleteCategory(prevState: DeleteState, formData: FormData)
     return { success: false, message: 'Erro. Verifique se há transações vinculadas.' };
   }
 }
-
-// ============================================================================
-// RECORRÊNCIAS
-// ============================================================================
-
 const recurringTransactionSchema = z.object({
   description: z.string().min(3, 'Obrigatório.'),
   amount: z.coerce.number().positive(),
@@ -456,6 +422,10 @@ const recurringTransactionSchema = z.object({
 });
 
 export type RecurringFormState = { success: boolean; message: string; errors?: any; };
+
+// ============================================================================
+// RECORRÊNCIAS & CONCILIAÇÃO
+// ============================================================================
 
 export async function addRecurringTransaction(prevState: RecurringFormState, formData: FormData): Promise<RecurringFormState> {
   const session = await auth();
@@ -473,11 +443,35 @@ export async function addRecurringTransaction(prevState: RecurringFormState, for
   if (!validated.success) return { success: false, message: 'Erro de validação.' };
   
   try {
-    await prisma.recurringTransaction.create({ 
-      data: { ...validated.data, userId: session.user.id } // <-- CORREÇÃO
+    await prisma.$transaction(async (tx) => {
+      const rt = await tx.recurringTransaction.create({ 
+        data: { ...validated.data, userId: session.user.id } 
+      });
+
+      // 1. DENTRO DE addRecurringTransaction: Substitua o bloco do "while" por isto:
+      // GERADOR LAZY: Cria APENAS o primeiro lançamento planejado
+      const firstDate = new Date(validated.data.startDate);
+      const limitDate = validated.data.endDate ? new Date(validated.data.endDate) : null;
+
+      if (!limitDate || firstDate <= limitDate) {
+         await tx.transaction.create({
+           data: {
+             userId: session.user.id,
+             description: validated.data.description,
+             amount: validated.data.type === 'EXPENSE' ? -Math.abs(validated.data.amount) : Math.abs(validated.data.amount),
+             date: firstDate,
+             type: validated.data.type,
+             categoryId: validated.data.categoryId,
+             status: 'PLANNED' as const,
+             recurringTransactionId: rt.id
+           }
+         });
+      }
     });
+
     revalidatePath('/recurring');
-    return { success: true, message: 'Despesa recorrente adicionada!' };
+    revalidatePath('/');
+    return { success: true, message: 'Recorrência e meses futuros gerados!' };
   } catch (error) {
     return { success: false, message: 'Falha ao adicionar.' };
   }
@@ -489,11 +483,135 @@ export async function deleteRecurringTransaction(prevState: DeleteState, formDat
 
   const id = formData.get('id') as string;
   try {
-    await prisma.recurringTransaction.delete({ where: { id, userId: session.user.id } }); // <-- CORREÇÃO
+    await prisma.$transaction(async (tx) => {
+       // 1. Apaga todo o futuro que ainda não foi pago (PLANNED)
+       await tx.transaction.deleteMany({
+         where: { recurringTransactionId: id, status: 'PLANNED' }
+       });
+       // 2. Apaga a "assinatura" da recorrência (Os que já foram CONFIRMED ficam no histórico)
+       await tx.recurringTransaction.delete({ where: { id, userId: session.user.id } });
+    });
     revalidatePath('/recurring');
-    return { success: true, message: 'Excluída com sucesso.' };
+    revalidatePath('/');
+    return { success: true, message: 'Recorrência cancelada com sucesso.' };
   } catch (_error) {
-    return { success: false, message: 'Falha ao excluir.' };
+    return { success: false, message: 'Falha ao cancelar.' };
+  }
+}
+
+// O MOTOR DE CONCILIAÇÃO
+export async function reconcileTransaction(prevState: FormState, formData: FormData): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, message: 'Não autorizado' };
+
+  try {
+    const transactionId = formData.get('transactionId') as string;
+    const accountSelection = formData.get('accountId') as string;
+    const amountStr = formData.get('amount') as string;
+    const dateStr = formData.get('date') as string;
+    const type = formData.get('type') as string;
+
+    if (!transactionId || !accountSelection || !amountStr || !dateStr) throw new Error("Preencha os campos obrigatórios.");
+
+    const amount = Math.abs(parseFloat(amountStr));
+    const date = new Date(dateStr);
+    const isCardTransaction = accountSelection.startsWith('card_');
+    const targetId = accountSelection.replace('account_', '').replace('card_', '');
+    const finalAmount = type === 'EXPENSE' ? -amount : amount;
+
+    await prisma.$transaction(async (tx) => {
+      const existingTx = await tx.transaction.findUnique({ where: { id: transactionId } });
+      if (!existingTx || existingTx.status === 'CONFIRMED') throw new Error("Transação inválida ou já conciliada.");
+
+      let linkedInvoiceId = null;
+
+      // Se for pagar com CARTÃO DE CRÉDITO
+      if (isCardTransaction && type === 'EXPENSE') {
+         const card = await tx.creditCard.findUnique({ where: { id: targetId }});
+         if (!card) throw new Error("Cartão não encontrado.");
+
+         let invoiceMonth = date.getMonth() + 1;
+         let invoiceYear = date.getFullYear();
+
+         if (date.getDate() >= card.closingDay) {
+            invoiceMonth += 1;
+            if (invoiceMonth > 12) { invoiceMonth = 1; invoiceYear += 1; }
+         }
+
+         let invoice = await tx.invoice.findFirst({ where: { cardId: card.id, month: invoiceMonth, year: invoiceYear } });
+         if (!invoice) {
+            invoice = await tx.invoice.create({ data: { cardId: card.id, month: invoiceMonth, year: invoiceYear, status: 'OPEN', amount: 0 } });
+         }
+
+         linkedInvoiceId = invoice.id;
+
+         // Joga o valor na fatura
+         await tx.invoice.update({
+            where: { id: invoice.id },
+            data: { amount: { increment: amount } }
+         });
+      }
+
+      // ATUALIZA A TRANSAÇÃO (Transforma de PLANNED para CONFIRMED)
+      await tx.transaction.update({
+        where: { id: transactionId },
+        data: {
+          amount: finalAmount,
+          date,
+          status: 'CONFIRMED',
+          accountId: !isCardTransaction ? targetId : null,
+          invoiceId: linkedInvoiceId
+        }
+      });
+
+      // SPAWN: Se essa transação que acabamos de conciliar for parte de uma recorrência, gera o mês que vem!
+      if (existingTx.recurringTransactionId) {
+         const rt = await tx.recurringTransaction.findUnique({ where: { id: existingTx.recurringTransactionId }});
+         
+         if (rt) {
+            // Calcula a próxima data baseado na data PLANEJADA original (para não desalinhar o dia)
+            let nextDate = new Date(existingTx.date);
+            
+            if (rt.frequency === 'MONTHLY') nextDate = addMonths(nextDate, 1);
+            else if (rt.frequency === 'YEARLY') nextDate = addYears(nextDate, 1);
+            else if (rt.frequency === 'WEEKLY') nextDate = addWeeks(nextDate, 1);
+            else if (rt.frequency === 'DAILY') nextDate = addDays(nextDate, 1);
+
+            const limitDate = rt.endDate ? new Date(rt.endDate) : null;
+
+            // Só cria o próximo se não tiver passado da data fim (Parcelamento concluído)
+            if (!limitDate || nextDate <= limitDate) {
+               await tx.transaction.create({
+                 data: {
+                   userId: session.user.id,
+                   description: rt.description,
+                   amount: rt.type === 'EXPENSE' ? -Math.abs(rt.amount) : Math.abs(rt.amount), // Volta pro valor original caso a conta de luz venha com valor diferente
+                   date: nextDate,
+                   type: rt.type,
+                   categoryId: rt.categoryId,
+                   status: 'PLANNED',
+                   recurringTransactionId: rt.id
+                 }
+               });
+            }
+         }
+      }
+
+
+      // ATUALIZA O SALDO DA CONTA (Se pagou no débito/pix)
+      if (!isCardTransaction) {
+         await tx.bankAccount.update({
+           where: { id: targetId },
+           data: { initialBalance: type === 'EXPENSE' ? { decrement: amount } : { increment: amount } }
+         });
+      }
+    });
+
+    revalidatePath('/');
+    revalidatePath('/transactions');
+    return { success: true, message: 'Lançamento conciliado com sucesso!' };
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Falha ao conciliar.' };
   }
 }
 
@@ -502,7 +620,7 @@ export async function getRecurringBalance() {
   if (!session?.user?.id) return { totalRecurringBalance: 0 };
 
   const recurringTransactions = await prisma.recurringTransaction.findMany({
-    where: { userId: session.user.id } // <-- CORREÇÃO
+    where: { userId: session.user.id } 
   });
   
   const totalRecurringBalance = recurringTransactions.reduce((acc, transaction) => {

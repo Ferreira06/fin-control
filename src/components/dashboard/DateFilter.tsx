@@ -5,7 +5,7 @@
 import * as React from 'react';
 // A MUDANÇA ESTÁ AQUI 👇: Importar o ícone 'X'
 import { CalendarIcon, X } from 'lucide-react';
-import {format, startOfMonth } from 'date-fns';
+import {endOfMonth, format, startOfMonth } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
@@ -24,7 +24,7 @@ export function DateFilter({ className }: React.HTMLAttributes<HTMLDivElement>) 
 
   const [date, setDate] = React.useState<DateRange | undefined>({
     from: from ? new Date(from) : startOfMonth(new Date()),
-    to: to ? new Date(to) : new Date(),
+    to: to ? new Date(to) : endOfMonth(new Date()),
   });
 
   const handleDateSelect = (newDateRange: DateRange | undefined) => {
@@ -43,16 +43,12 @@ export function DateFilter({ className }: React.HTMLAttributes<HTMLDivElement>) 
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
   
-  // A MUDANÇA ESTÁ AQUI 👇: Função para limpar os parâmetros da URL
   const handleClearFilter = () => {
-    // Reseta o estado visual do calendário para o padrão (mês atual)
     setDate({ from: startOfMonth(new Date()), to: new Date() });
-    // Navega para a URL base, removendo todos os parâmetros de busca
     router.push(pathname, { scroll: false });
   };
 
   return (
-    // A MUDANÇA ESTÁ AQUI 👇: Alterado de 'grid' para 'flex' para alinhar os botões horizontalmente
     <div className={cn('flex items-center gap-2', className)}>
       <Popover>
         <PopoverTrigger asChild>

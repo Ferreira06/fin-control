@@ -1,16 +1,20 @@
 // file: src/components/transactions/TransactionsTable.tsx
 'use client';
 
-import { Category, Transaction } from "@prisma/client";
+import { BankAccount, Category, CreditCard, Transaction } from "@prisma/client";
 import { RecentTransactions } from "../dashboard/RecentTransactions"; // Reutilizamos o componente existente!
 
 // Este componente é um "wrapper" para reutilizar a tabela que já temos.
 export function TransactionsTable({
   transactions,
   categories,
+  accounts,
+  cards
 }: {
   transactions: (Transaction & { category: Category; isProjected?: boolean })[];
   categories: Category[];
+  accounts: BankAccount[];
+  cards: CreditCard[];
 }) {
   if (transactions.length === 0) {
     return (
@@ -20,7 +24,5 @@ export function TransactionsTable({
     );
   }
 
-  // Reutilizamos o componente do dashboard, mas sem o título e o card em volta.
-  // Se quiser um layout diferente, pode copiar a lógica de 'RecentTransactions' para cá.
-  return <RecentTransactions transactions={transactions} categories={categories} />;
+  return <RecentTransactions transactions={transactions} categories={categories} cards={cards} accounts={accounts} />;
 }

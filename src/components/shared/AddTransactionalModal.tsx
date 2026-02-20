@@ -15,7 +15,7 @@ import { CalendarIcon, Paperclip, ArrowRightLeft, TrendingDown, TrendingUp, Load
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { Category } from '@prisma/client';
+import { Category, CreditCard } from '@prisma/client';
 import { toast } from 'sonner';
 
 // Definimos uma interface simplificada para as contas para o componente Client-side
@@ -34,11 +34,19 @@ function SubmitButton() {
   );
 }
 
-export function AddTransactionModal({ categories, accounts }: { categories: Category[], accounts: SimpleAccount[] }) {
-  const [state, formAction] = useActionState(addTransaction, { success: false, message: '' });
+export function AddTransactionModal({ 
+  categories, 
+  accounts, 
+  cards = []
+}: { 
+  categories: Category[]; 
+  accounts: SimpleAccount[]; 
+  cards?: CreditCard[];
+}) {  const [state, formAction] = useActionState(addTransaction, { success: false, message: '' });
   const [open, setOpen] = useState(false);
   const [txType, setTxType] = useState<"INCOME" | "EXPENSE" | "TRANSFER">("EXPENSE");
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [isCreditCard, setIsCreditCard] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -136,10 +144,20 @@ export function AddTransactionModal({ categories, accounts }: { categories: Cate
               <>
                 <div className="col-span-1 space-y-2">
                   <Label>{txType === 'INCOME' ? 'Receber em:' : 'Pagar com:'}</Label>
-                  <Select name="accountId" required>
-                    <SelectTrigger><SelectValue placeholder="Selecione a conta" /></SelectTrigger>
+                  <Select name="accountId" required onValueChange={(val) => setIsCreditCard(val.startsWith('card_'))}>
+                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                     <SelectContent>
-                      {accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {/* Agrupa Contas Bancárias */}
+                      <optgroup label="Contas Bancárias" className="p-1 font-semibold text-muted-foreground text-xs uppercase">
+                        {accounts.map(a => <SelectItem key={a.id} value={`account_${a.id}`}>{a.name}</SelectItem>)}
+                      </optgroup>
+                      
+                      {/* Agrupa Cartões de Crédito (SÓ APARECE SE FOR DESPESA) */}
+                      {txType === 'EXPENSE' && cards && cards.length > 0 && (
+                        <optgroup label="Cartões de Crédito" className="p-1 font-semibold text-muted-foreground text-xs uppercase mt-2">
+                          {cards.map(c => <SelectItem key={c.id} value={`card_${c.id}`}>{c.name}</SelectItem>)}
+                        </optgroup>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -169,6 +187,23 @@ export function AddTransactionModal({ categories, accounts }: { categories: Cate
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* CAMPO DE PARCELAMENTO DINÂMICO */}
+                {isCreditCard && txType === 'EXPENSE' && (
+                  <div className="col-span-1 space-y-2">
+                    <Label>Parcelamento</Label>
+                    <Select name="installments" defaultValue="1">
+                      <SelectTrigger><SelectValue placeholder="1x" /></SelectTrigger>
+                      <SelectContent>
+                        {[...Array(24)].map((_, i) => (
+                           <SelectItem key={i+1} value={(i+1).toString()}>
+                             {i+1}x {i > 0 && `(Parcelado)`}
+                           </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* NOVO CAMPO: TAGS DINÂMICAS */}
                 <div className="col-span-2 space-y-2">

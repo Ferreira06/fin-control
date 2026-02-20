@@ -14,6 +14,7 @@ import { CreateAccountOnboarding } from '@/components/dashboard/CreateAccountOnb
 import { Landmark } from 'lucide-react';
 import { redirect } from 'next/navigation';
 import { getBankAccounts } from '@/lib/actions/account-actions';
+import { getCreditCards } from '@/lib/actions/credit-card-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,8 @@ export default async function DashboardPage(
   const accountsCount = accounts.length;
 
   const hasAccounts = accountsCount > 0;
+
+  const cards = await getCreditCards();
 
   if (!hasAccounts) {
     return (
@@ -95,7 +98,7 @@ export default async function DashboardPage(
         <div className="flex flex-wrap items-center gap-2 md:gap-4">
           <DateFilter />
           <ImportModal />
-          <AddTransactionModal categories={categories} accounts={accounts} />        
+          <AddTransactionModal categories={categories} accounts={accounts} cards={cards}/>        
         </div>
       </header>
       

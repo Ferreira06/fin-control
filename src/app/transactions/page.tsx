@@ -7,6 +7,7 @@ import { AddTransactionModal } from "@/components/shared/AddTransactionalModal";
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { getCreditCards } from "@/lib/actions/credit-card-actions";
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ export default async function TransactionsPage(
   const type = searchParams.type as 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'all' | undefined;
   const from = searchParams.from ? new Date(searchParams.from as string) : undefined;
   const to = searchParams.to ? new Date(searchParams.to as string) : undefined;
+  const cards = await getCreditCards();
   
   // NOVO: Pegando o ID da conta da URL
   const accountId = searchParams.account as string | undefined;
@@ -60,7 +62,7 @@ export default async function TransactionsPage(
           <h1 className="text-3xl font-bold">Todas as Transações</h1>
           <p className="text-muted-foreground">Visualize, filtre e gerencie seu histórico completo.</p>
         </div>
-        <AddTransactionModal categories={categories} accounts={accounts} />
+        <AddTransactionModal categories={categories} accounts={accounts} cards={cards}/>
       </header>
 
       {/* Barra de Filtros */}

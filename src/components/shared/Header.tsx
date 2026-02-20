@@ -15,12 +15,12 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Dashboard" },
   { href: "/accounts", label: "Contas" },
+  { href: "/cards", label: "Cartões" }, // <-- NOVO AQUI
   { href: "/transactions", label: "Transações" },
   { href: "/recurring", label: "Recorrências" },
   { href: "/investments", label: "Investimentos" },
   { href: "/reports", label: "Relatórios" },
 ];
-
 interface HeaderProps {
   user?: {
     name?: string | null;

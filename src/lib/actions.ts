@@ -96,57 +96,127 @@ export async function addTransaction(prevState: FormState, formData: FormData): 
 
     }
     // ============================================
-    // LÓGICA NORMAL (RECEITA / DESPESA)
+    // LÓGICA NORMAL (RECEITA / DESPESA / CARTÃO)
     // ============================================
     else {
-      const accountId = formData.get('accountId') as string;
+      const accountSelection = formData.get('accountId') as string; // Ex: "account_abc123" ou "card_xyz789"
       const categoryId = formData.get('categoryId') as string;
-      const tagId = formData.get('tagId') as string | null; // <-- Captura a Tag se houver
-      const file = formData.get('attachment') as File | null; // <-- Captura o Arquivo
+      const tagId = formData.get('tagId') as string | null;
+      const file = formData.get('attachment') as File | null;
 
-      if (!accountId) throw new Error("Selecione uma conta bancária.");
+      if (!accountSelection) throw new Error("Selecione uma conta ou cartão.");
       if (!categoryId || categoryId === 'none') throw new Error("Selecione uma categoria.");
 
+      const isCardTransaction = accountSelection.startsWith('card_');
+      const targetId = accountSelection.replace('account_', '').replace('card_', '');
       const finalAmount = type === 'EXPENSE' ? -amount : amount;
 
       await prisma.$transaction(async (tx) => {
-        // 1. Cria a transação (Agora com a Tag vinculada)
-        const novaTransacao = await tx.transaction.create({
-          data: {
-            userId: session.user.id,
-            description,
-            amount: finalAmount,
-            date,
-            type: type as TransactionType,
-            accountId,
-            categoryId,
-            tags: tagId && tagId !== 'none' ? { connect: [{ id: tagId }] } : undefined, // <-- Conecta a tag
-            status: 'CONFIRMED'
-          }
-        });
+        let linkedInvoiceId = null;
 
-        // 2. ATUALIZA O SALDO DA CONTA
-        await tx.bankAccount.update({
-          where: { id: accountId },
-          data: { 
-            initialBalance: type === 'EXPENSE' ? { decrement: amount } : { increment: amount } 
-          }
-        });
+        // SE FOR CARTÃO DE CRÉDITO (Mágica do Parcelamento Corrigida)
+        if (isCardTransaction && type === 'EXPENSE') {
+           const card = await tx.creditCard.findUnique({ where: { id: targetId }});
+           if (!card) throw new Error("Cartão não encontrado.");
 
-        // 3. SALVA O ANEXO FÍSICO NO BANCO DE DADOS
-        if (file && file.size > 0) {
-          // Converte o File do navegador para um Buffer do NodeJS
-          const buffer = Buffer.from(await file.arrayBuffer());
-          
-          await tx.attachment.create({
-            data: {
-              fileName: file.name,
-              mimeType: file.type,
-              size: file.size,
-              data: buffer,
-              transactionId: novaTransacao.id
-            }
-          });
+           const installmentsStr = formData.get('installments') as string;
+           const totalInstallments = installmentsStr ? parseInt(installmentsStr) : 1;
+           const baseAmount = amount / totalInstallments; 
+
+           const purchaseDate = new Date(date);
+           
+           // 1. Calcula o mês/ano BASE da primeira fatura (Verificando o fechamento UMA única vez)
+           let startMonth = purchaseDate.getMonth() + 1;
+           let startYear = purchaseDate.getFullYear();
+
+           if (purchaseDate.getDate() >= card.closingDay) {
+              startMonth += 1;
+              if (startMonth > 12) {
+                 startMonth = 1;
+                 startYear += 1;
+              }
+           }
+           
+           for (let i = 0; i < totalInstallments; i++) {
+               // 2. Calcula o mês desta parcela específica
+               let invoiceMonth = startMonth + i;
+               let invoiceYear = startYear;
+
+               while (invoiceMonth > 12) {
+                  invoiceMonth -= 12;
+                  invoiceYear += 1;
+               }
+
+               let invoice = await tx.invoice.findFirst({
+                  where: { cardId: card.id, month: invoiceMonth, year: invoiceYear }
+               });
+
+               if (!invoice) {
+                  invoice = await tx.invoice.create({
+                     data: { cardId: card.id, month: invoiceMonth, year: invoiceYear, status: 'OPEN', amount: 0 }
+                  });
+               }
+
+               linkedInvoiceId = invoice.id;
+
+               await tx.invoice.update({
+                  where: { id: invoice.id },
+                  data: { amount: { increment: baseAmount } }
+               });
+
+               // 3. Define a data da transação para o dia do VENCIMENTO da fatura 
+               // (Evitando o bug do dia 31 em fevereiro com data limitadora)
+               const lastDayOfMonth = new Date(invoiceYear, invoiceMonth, 0).getDate();
+               const safeDueDay = Math.min(card.dueDay, lastDayOfMonth);
+               const installmentDate = new Date(invoiceYear, invoiceMonth - 1, safeDueDay);
+
+               const txDesc = totalInstallments > 1 ? `${description} (${i + 1}/${totalInstallments})` : description;
+
+               await tx.transaction.create({
+                  data: {
+                    userId: session.user.id,
+                    description: txDesc,
+                    amount: -Math.abs(baseAmount),
+                    date: installmentDate, // AQUI É O SEGREDO DO DASHBOARD!
+                    type: type as TransactionType,
+                    invoiceId: invoice.id, 
+                    categoryId,
+                    installmentNumber: totalInstallments > 1 ? i + 1 : null,
+                    totalInstallments: totalInstallments > 1 ? totalInstallments : null,
+                    tags: tagId && tagId !== 'none' ? { connect: [{ id: tagId }] } : undefined,
+                    status: 'CONFIRMED'
+                  }
+               });
+           }
+        }
+        // SE FOR CONTA BANCÁRIA (Pagamento à vista / PIX)
+        else {
+           const novaTransacao = await tx.transaction.create({
+             data: {
+               userId: session.user.id,
+               description,
+               amount: finalAmount,
+               date,
+               type: type as TransactionType,
+               accountId: targetId, 
+               categoryId,
+               tags: tagId && tagId !== 'none' ? { connect: [{ id: tagId }] } : undefined,
+               status: 'CONFIRMED'
+             }
+           });
+
+           await tx.bankAccount.update({
+             where: { id: targetId },
+             data: { initialBalance: type === 'EXPENSE' ? { decrement: amount } : { increment: amount } }
+           });
+           
+           // SALVA O ANEXO
+           if (file && file.size > 0) {
+             const buffer = Buffer.from(await file.arrayBuffer());
+             await tx.attachment.create({
+               data: { fileName: file.name, mimeType: file.type, size: file.size, data: buffer, transactionId: novaTransacao.id }
+             });
+           }
         }
       });
     }
@@ -175,22 +245,46 @@ export async function deleteTransaction(prevState: DeleteState, formData: FormDa
       return { success: false, message: 'Transação não encontrada.' };
     }
     
-    // Deleta a transação e REVERTE O SALDO da conta ao mesmo tempo
+    // Deleta a transação e REVERTE TUDO (Saldos, Faturas, etc) ao mesmo tempo
     await prisma.$transaction(async (tx) => {
-      // Reverte o saldo da conta principal
+      
+      // 1. Reverte o saldo da Conta Bancária (Se existir)
+      // MATEMÁTICA CORRIGIDA: Se gastou (-50) a reversão é (+50). Se ganhou (+50), a reversão é (-50).
       if (transaction.accountId && transaction.status === 'CONFIRMED') {
-        const amountToReverse = transaction.type === 'EXPENSE' ? Math.abs(transaction.amount) : -Math.abs(transaction.amount);
+        const amountToReverse = transaction.amount * -1; // Inverte o sinal perfeitamente
         await tx.bankAccount.update({
           where: { id: transaction.accountId },
           data: { initialBalance: { increment: amountToReverse } }
         });
       }
 
-      // Se for uma transferência, apaga a transação linkada e reverte o saldo da outra conta
+      // 2. Reversão de COMPRA normal no Cartão de Crédito
+      if (transaction.invoiceId) {
+         await tx.invoice.update({
+            where: { id: transaction.invoiceId },
+            data: { amount: { decrement: Math.abs(transaction.amount) } }
+         });
+      }
+
+      // 3. Reversão de PAGAMENTO DE FATURA (O BUG QUE VOCÊ ACHOU!)
+      // Verifica se essa transação que estamos apagando era o pagamento de alguma fatura
+      const paidInvoice = await tx.invoice.findFirst({ 
+        where: { paymentTransactionId: id } 
+      });
+      
+      if (paidInvoice) {
+         // Se era, reabre a fatura e remove o vínculo do pagamento
+         await tx.invoice.update({
+           where: { id: paidInvoice.id },
+           data: { status: 'OPEN', paymentTransactionId: null }
+         });
+      }
+
+      // 4. Reversão de Transferência Padrão (Apaga a outra ponta)
       if (transaction.transferId) {
         const linkedTx = await tx.transaction.findUnique({ where: { id: transaction.transferId } });
         if (linkedTx && linkedTx.accountId) {
-          const linkedAmountToReverse = linkedTx.type === 'EXPENSE' ? Math.abs(linkedTx.amount) : -Math.abs(linkedTx.amount);
+          const linkedAmountToReverse = linkedTx.amount * -1;
           await tx.bankAccount.update({
             where: { id: linkedTx.accountId },
             data: { initialBalance: { increment: linkedAmountToReverse } }
@@ -199,13 +293,14 @@ export async function deleteTransaction(prevState: DeleteState, formData: FormDa
         }
       }
 
-      // Finalmente, apaga a transação que o usuário clicou
+      // 5. Finalmente, apaga a transação original
       await tx.transaction.delete({ where: { id } });
     });
 
     revalidatePath('/');
     revalidatePath('/transactions');
     revalidatePath('/accounts');
+    revalidatePath('/cards'); // Atualiza a página de cartões também
     return { success: true, message: 'Transação e saldos revertidos com sucesso.' };
   } catch (error) {
     return { success: false, message: 'Falha ao excluir a transação.' };
@@ -233,7 +328,10 @@ export async function getMonthlySummary({ from, to }: { from?: Date; to?: Date }
       userId: session.user.id, // <-- CORREÇÃO: Escopo de usuário
       date: { gte: startDate, lte: endDate } 
     },
-    include: { category: true, account: true, tags: true, attachments: {
+    include: { category: true, account: true, tags: true, invoice: {
+          include: { creditCard: true }
+        },
+        attachments: {
         select: {
           id: true,
           fileName: true,
@@ -241,6 +339,7 @@ export async function getMonthlySummary({ from, to }: { from?: Date; to?: Date }
           size: true
         }
       } },
+      
   });
 
   const recurringTransactions = await prisma.recurringTransaction.findMany({
@@ -793,7 +892,10 @@ export async function getAllTransactions(params: {
       include: {
         category: true,
         account: true, 
-        tags: true, 
+        tags: true,
+        invoice: {
+          include: { creditCard: true }
+        },
         attachments: {
         select: {
           id: true,

@@ -4,20 +4,23 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/shared/theme-provider";
 import AppLayout from "@/components/shared/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
-import Header from "@/components/shared/Header"; // <--- Importe o Header aqui
+import { Header } from "@/components/shared/Header"
+import { auth } from "@/lib/auth";
 
 const inter = Inter({ subsets: ["latin"] });
+
 
 export const metadata: Metadata = {
   title: "FinControl",
   description: "Gerenciador financeiro pessoal",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`}>
@@ -28,7 +31,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {/* Passamos o Header como prop para o componente Cliente */}
-          <AppLayout header={<Header />}>
+          <AppLayout header={<Header user={session?.user} />}>
             {children}
           </AppLayout>
           

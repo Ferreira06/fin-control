@@ -26,7 +26,6 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [showPasswordIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const searchParams = useSearchParams();
   
@@ -66,6 +65,7 @@ export default function LoginPage() {
       }
       // Se der sucesso, o redirect acontece no server
     } catch (error) {
+      console.log(error);
       toast.error("Ocorreu um erro ao fazer login.");
       setErrorMessage("Ocorreu um erro ao fazer login.");
     } finally {

@@ -59,7 +59,13 @@ export default function AddAccountModal() {
             <Label htmlFor="name">Nome da Conta</Label>
             <Input id="name" name="name" placeholder="Ex: Nubank Principal" required />
           </div>
-          
+          <div className="space-y-2">
+              <Label htmlFor="color">Cor da Conta (Hexadecimal)</Label>
+              <div className="flex gap-2">
+                <Input type="color" id="color" name="color" defaultValue={ "#3b82f6"} className="w-16 h-10 p-1" />
+                <Input type="text" defaultValue={ "#3b82f6"} disabled className="flex-1" />
+              </div>
+            </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
                 <Label htmlFor="type">Tipo</Label>

@@ -11,8 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, User, Settings, CreditCard, Wallet } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { User, Settings, LogOut } from "lucide-react";
 import Link from "next/link";
 
 interface UserNavProps {
@@ -20,31 +20,28 @@ interface UserNavProps {
     name?: string | null;
     email?: string | null;
     image?: string | null;
-  }
+  };
 }
 
 export function UserNav({ user }: UserNavProps) {
-  // Gera iniciais (Ex: "Lucas Ferreira" -> "LF")
+  // Gera iniciais para o fallback do avatar
   const initials = user.name
-    ?.split(' ')
+    ?.split(" ")
     .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .substring(0, 2) || "U";
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "U";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-9 w-9 rounded-full ring-2 ring-transparent hover:ring-primary/20 transition-all">
+        <Button variant="ghost" className="relative h-9 w-9 rounded-full">
           <Avatar className="h-9 w-9">
-            <AvatarImage src={user.image || ""} alt={user.name || ""} />
-            <AvatarFallback className="bg-primary/10 text-primary font-bold">
-              {initials}
-            </AvatarFallback>
+            <AvatarImage src={user.image || ""} alt={user.name || "User"} />
+            <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
@@ -55,33 +52,24 @@ export function UserNav({ user }: UserNavProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        
         <DropdownMenuGroup>
-          <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href="/config">
+          <DropdownMenuItem asChild>
+            <Link href="/config?tab=profile" className="cursor-pointer">
               <User className="mr-2 h-4 w-4" />
-              <span>Minha Conta</span>
+              <span>Meu Perfil</span>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href="/accounts">
-              <Wallet className="mr-2 h-4 w-4" />
-              <span>Contas & Carteiras</span>
-            </Link>
-          </DropdownMenuItem>
-           <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href="/config">
+          <DropdownMenuItem asChild>
+            <Link href="/config?tab=system" className="cursor-pointer">
               <Settings className="mr-2 h-4 w-4" />
               <span>Configurações</span>
             </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
-        
         <DropdownMenuSeparator />
-        
         <DropdownMenuItem 
-          onClick={() => signOut({ callbackUrl: "/login" })} 
-          className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20 cursor-pointer"
+          className="text-red-600 focus:text-red-600 cursor-pointer"
+          onClick={() => signOut({ callbackUrl: "/login" })}
         >
           <LogOut className="mr-2 h-4 w-4" />
           <span>Sair</span>

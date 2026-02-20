@@ -17,12 +17,12 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
-  password      String?   // Para login com email/senha
+  password      String? // Para login com email/senha
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[] // Contas de Login (Google, etc)
-  sessions      Session[]
+  accounts Account[] // Contas de Login (Google, etc)
+  sessions Session[]
 
   // Seus dados do ERP
   bankAccounts          BankAccount[] // Renomeado de Account
@@ -35,21 +35,22 @@ model User {
   loans                 Loan[]
   goals                 Goal[]
   bankConnections       BankConnection[]
+  Tag                   Tag[]
 }
 
-model Account { // Tabela interna do NextAuth
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String? @db.Text
-  access_token       String? @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String? @db.Text
-  session_state      String?
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -76,156 +77,158 @@ model VerificationToken {
 // 2. SEU ERP FINANCEIRO (COM BankAccount RENOMEADO)
 // =========================================================
 
-model BankAccount { // ANTIGA "Account"
+model BankAccount {
   id             String      @id @default(cuid())
   userId         String
   user           User        @relation(fields: [userId], references: [id])
-  name           String      
-  type           AccountType 
+  name           String
+  type           AccountType
   initialBalance Float       @default(0)
   currency       String      @default("BRL")
-  color          String?     
-  externalId     String?     
-  
-  transactions   Transaction[] 
-  creditCards    CreditCard[]
-  investments    Investment[] 
+  color          String?
+  externalId     String?
+  isArchived     Boolean     @default(false)
 
-  connectionId   String?
-  connection     BankConnection? @relation(fields: [connectionId], references: [id])
+  transactions Transaction[]
+  creditCards  CreditCard[]
+  investments  Investment[]
 
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  connectionId String?
+  connection   BankConnection? @relation(fields: [connectionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
+
 // 3. CARTÕES DE CRÉDITO
 model CreditCard {
-  id             String   @id @default(cuid())
-  userId         String
-  user           User     @relation(fields: [userId], references: [id])
-  name           String   // Ex: "Nubank Ultravioleta"
-  limit          Float
-  closingDay     Int      // Dia que a fatura fecha (Ex: 1)
-  dueDay         Int      // Dia que a fatura vence (Ex: 10)
-  brand          String?  // VISA, MASTERCARD, etc.
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id])
+  name       String // Ex: "Nubank Ultravioleta"
+  limit      Float
+  closingDay Int // Dia que a fatura fecha (Ex: 1)
+  dueDay     Int // Dia que a fatura vence (Ex: 10)
+  brand      String? // VISA, MASTERCARD, etc.
 
-  defaultAccountId String? 
+  defaultAccountId String?
   defaultAccount   BankAccount? @relation(fields: [defaultAccountId], references: [id])
-  
-  invoices       Invoice[]
+
+  invoices Invoice[]
 }
 
 // 4. FATURAS DE CARTÃO
 model Invoice {
-  id           String        @id @default(cuid())
-  cardId       String
-  creditCard   CreditCard    @relation(fields: [cardId], references: [id])
-  month        Int           // Mês de referência (Ex: 10)
-  year         Int           // Ano de referência (Ex: 2026)
-  status       InvoiceStatus // OPEN, CLOSED, PAID
-  amount       Float         @default(0) // Valor total fechado
-  
+  id         String        @id @default(cuid())
+  cardId     String
+  creditCard CreditCard    @relation(fields: [cardId], references: [id])
+  month      Int // Mês de referência (Ex: 10)
+  year       Int // Ano de referência (Ex: 2026)
+  status     InvoiceStatus // OPEN, CLOSED, PAID
+  amount     Float         @default(0) // Valor total fechado
+
   transactions Transaction[] // Compras feitas nesta fatura
-  
+
   // Link para o pagamento da fatura (que é uma transação saindo de uma conta)
-  paymentTransactionId String? @unique
+  paymentTransactionId String?      @unique
   paymentTransaction   Transaction? @relation("InvoicePayment", fields: [paymentTransactionId], references: [id])
 }
 
 // 5. DÍVIDAS E EMPRÉSTIMOS
 model Loan {
-  id             String     @id @default(cuid())
-  userId         String
-  user           User       @relation(fields: [userId], references: [id])
-  
-  name           String     // Ex: "Financiamento Carro", "Empréstimo Mãe"
-  counterparty   String?    // Quem é a outra parte? (Banco X, Pessoa Y)
-  
-  type           LoanType   // BORROWED (Eu devo), LENT (Devem para mim)
-  status         LoanStatus // ACTIVE, PAID_OFF, DEFAULTED
-  
-  totalAmount    Float      // Valor original da dívida
-  remainingAmount Float     // Quanto falta pagar (Atualizado via triggers ou código)
-  interestRate   Float?     // Taxa de juros % a.m. (para projeção)
-  
-  dueDate        DateTime?  // Data limite final (se houver)
-  
-  // Relação com pagamentos (amortizações)
-  transactions   Transaction[] 
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  name         String // Ex: "Financiamento Carro", "Empréstimo Mãe"
+  counterparty String? // Quem é a outra parte? (Banco X, Pessoa Y)
+
+  type   LoanType // BORROWED (Eu devo), LENT (Devem para mim)
+  status LoanStatus // ACTIVE, PAID_OFF, DEFAULTED
+
+  totalAmount     Float // Valor original da dívida
+  remainingAmount Float // Quanto falta pagar (Atualizado via triggers ou código)
+  interestRate    Float? // Taxa de juros % a.m. (para projeção)
+
+  dueDate DateTime? // Data limite final (se houver)
+
+  // Relação com pagamentos (amortizações)
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // 6. ORÇAMENTOS (Budgeting)
 model Budget {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id])
-  
-  amount      Float    // Teto de gastos (Ex: 500.00)
-  month       Int      // 3
-  year        Int      // 2026
-  
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  amount Float // Teto de gastos (Ex: 500.00)
+  month  Int // 3
+  year   Int // 2026
+
   // O sistema comparará: Budget.amount vs SUM(Transactions) dessa categoria/mês
-  
+
   @@unique([userId, categoryId, month, year])
 }
 
 // 7. TRANSAÇÃO (Atualizada para suportar Planejamento e Dívidas)
 model Transaction {
-  id          String            @id @default(cuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id])
-  
-  description String
-  amount        Float   // Valor na moeda da CONTA (ex: BRL)
-  
-  originalAmount   Float?  // Valor na moeda original (ex: USD 50.00)
-  originalCurrency String? // "USD"
-  exchangeRate     Float?  // Taxa usada na conversão (ex: 5.75)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  date        DateTime          // Data de competência
-  
-  type        TransactionType   // INCOME, EXPENSE, TRANSFER
-  status      TransactionStatus @default(CONFIRMED) // AQUI ESTÁ O SEGREDO
-  
+  description String
+  amount      Float // Valor na moeda da CONTA (ex: BRL)
+
+  originalAmount   Float? // Valor na moeda original (ex: USD 50.00)
+  originalCurrency String? // "USD"
+  exchangeRate     Float? // Taxa usada na conversão (ex: 5.75)
+
+  date DateTime // Data de competência
+
+  type   TransactionType // INCOME, EXPENSE, TRANSFER
+  status TransactionStatus @default(CONFIRMED) // AQUI ESTÁ O SEGREDO
+
   // Relacionamentos Básicos
-  accountId   String?           // Se saiu da conta
-  account     BankAccount?          @relation(fields: [accountId], references: [id])
-  
-  categoryId  String?
-  category    Category?         @relation(fields: [categoryId], references: [id])
-  
+  accountId String? // Se saiu da conta
+  account   BankAccount? @relation(fields: [accountId], references: [id])
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
   // Cartão de Crédito
-  invoiceId   String?
-  invoice     Invoice?          @relation(fields: [invoiceId], references: [id])
-  installmentNumber Int?        // Parcela 1
-  totalInstallments Int?        // De 12
-  
+  invoiceId         String?
+  invoice           Invoice? @relation(fields: [invoiceId], references: [id])
+  installmentNumber Int? // Parcela 1
+  totalInstallments Int? // De 12
+
   // Dívidas (Amortização)
-  loanId      String?
-  loan        Loan?             @relation(fields: [loanId], references: [id])
+  loanId String?
+  loan   Loan?   @relation(fields: [loanId], references: [id])
 
   // Recorrência (Origem)
   recurringTransactionId String?
   recurringTransaction   RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
 
   // Campo para vincular transferências (Saída <-> Entrada)
-  transferId String?  @unique 
+  transferId String?      @unique
   transfer   Transaction? @relation("TransferRelation", fields: [transferId], references: [id])
-  
+
   // O inverso da relação (necessário para o Prisma, mas não gera campo no banco)
   transferOpposite Transaction? @relation("TransferRelation")
 
   // Open Finance / Conciliação
-  externalId  String?           // ID do banco real
-  isConciliated Boolean         @default(false) // Se foi conferido manualmente
+  externalId    String? // ID do banco real
+  isConciliated Boolean @default(false) // Se foi conferido manualmente
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   createdBy String? // "API_IMPORT", "USER_MANUAL", "RECURRING_CRON"
   deletedAt DateTime? // Soft Delete (nunca apague dinheiro do banco de dados!)
 
@@ -242,90 +245,104 @@ model Transaction {
 
 // 8. CATEGORIAS E TAGS
 model Category {
-  id           String        @id @default(cuid())
-  userId       String
-  user         User          @relation(fields: [userId], references: [id])
-  name         String
-  icon         String?
-  type         TransactionType // Para filtrar categorias só de Receita ou só de Despesa
-  transactions Transaction[]
+  id                    String                 @id @default(cuid())
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id])
+  name                  String
+  icon                  String?
+  type                  TransactionType // Para filtrar categorias só de Receita ou só de Despesa
+  transactions          Transaction[]
   recurringTransactions RecurringTransaction[]
-  
-  @@unique([name, userId]) // Nomes únicos por usuário
+
+  tags    Tag[]
   budgets Budget[]
+
+  @@unique([name, userId]) // Nomes únicos por usuário
 }
 
 model Tag {
-  id           String        @id @default(cuid())
-  name         String
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  name   String
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
   transactions Transaction[]
+
+  @@unique([name, categoryId]) // Uma categoria não pode ter duas tags com o mesmo nome
 }
 
 // 9. RECORRÊNCIA (Atualizado)
 model RecurringTransaction {
-  id          String          @id @default(cuid())
-  userId      String
-  user        User            @relation(fields: [userId], references: [id])
-  amount      Float
-  description String
-  type        TransactionType
-  categoryId  String
-  category    Category        @relation(fields: [categoryId], references: [id])
-  frequency   Frequency
-  startDate   DateTime
-  endDate     DateTime?
-  lastGenerated DateTime?     // Para o Cron saber quando foi a última
-  
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  amount        Float
+  description   String
+  type          TransactionType
+  categoryId    String
+  category      Category        @relation(fields: [categoryId], references: [id])
+  frequency     Frequency
+  startDate     DateTime
+  endDate       DateTime?
+  lastGenerated DateTime? // Para o Cron saber quando foi a última
+
   generatedTransactions Transaction[]
 }
 
-// 10. ANEXOS (Recibos, Notas Fiscais, Contratos, etc.)
+// 10. ANEXOS (Armazenados no banco de dados em formato Binário)
 model Attachment {
-  id            String      @id @default(cuid())
-  url           String      // URL do S3/Blob Storage
-  fileName      String
-  mimeType      String
+  id       String @id @default(cuid())
+  fileName String
+  mimeType String
+  size     Int
+  data     Bytes
+
   transactionId String?
-  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
 
 // 11. INVESTIMENTOS (Atualizado para Profissional)
 model Investment {
-  id          String         @id @default(cuid())
-  userId      String
-  user        User           @relation(fields: [userId], references: [id])
-  name        String         // "PETR4", "Tesouro Selic 2029"
-  ticker      String?        // Código de bolsa se houver
-  type        InvestmentType 
-  
+  id     String         @id @default(cuid())
+  userId String
+  user   User           @relation(fields: [userId], references: [id])
+  name   String // "PETR4", "Tesouro Selic 2029"
+  ticker String? // Código de bolsa se houver
+  type   InvestmentType
+
   accountId String?
   account   BankAccount? @relation(fields: [accountId], references: [id])
-  
+
   transactions InvestmentTransaction[]
-  
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   assetPrices AssetPrice[]
 }
 
 model InvestmentTransaction {
-  id            String   @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Link forte com a transação financeira (o dinheiro saindo da conta)
-  transactionId String   @unique 
+  transactionId String      @unique
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
-  investmentId  String
-  investment    Investment @relation(fields: [investmentId], references: [id])
+  investmentId String
+  investment   Investment @relation(fields: [investmentId], references: [id])
 
-  type          InvestmentMovementType // BUY, SELL, DIVIDEND
-  
-  quantity      Float    // Quantas cotas comprou (fundamental para Renda Variável)
-  pricePerShare Float    // Preço unitário no momento da compra
+  type InvestmentMovementType // BUY, SELL, DIVIDEND
+
+  quantity      Float // Quantas cotas comprou (fundamental para Renda Variável)
+  pricePerShare Float // Preço unitário no momento da compra
   // O amount total fica na tabela Transaction pai
-  
-  date          DateTime
+
+  date DateTime
 }
 
 // 12. METAS FINANCEIRAS (Goals)
@@ -333,13 +350,13 @@ model Goal {
   id            String    @id @default(cuid())
   userId        String
   user          User      @relation(fields: [userId], references: [id])
-  name          String    // Ex: "Viagem Europa", "Reserva de Emergência"
-  targetAmount  Float     // Ex: 15000.00
-  currentAmount Float     // Quanto já alocou (calculado ou manual)
+  name          String // Ex: "Viagem Europa", "Reserva de Emergência"
+  targetAmount  Float // Ex: 15000.00
+  currentAmount Float // Quanto já alocou (calculado ou manual)
   deadline      DateTime? // Quando quer atingir
-  
+
   // Opcional: Vincular transações específicas a essa meta (aportes)
-  transactions  Transaction[]
+  transactions Transaction[]
 }
 
 // 13. HISTÓRICO DE COTAÇÕES (para análise e gráficos)
@@ -348,8 +365,8 @@ model AssetPrice {
   investmentId String
   investment   Investment @relation(fields: [investmentId], references: [id])
   price        Float
-  date         DateTime   // Data da cotação (fechamento do dia)
-  
+  date         DateTime // Data da cotação (fechamento do dia)
+
   @@unique([investmentId, date]) // Apenas um preço por ativo por dia
 }
 
@@ -358,12 +375,12 @@ model BankConnection {
   id             String    @id @default(cuid())
   userId         String
   user           User      @relation(fields: [userId], references: [id])
-  providerName   String    // Ex: "Nubank", "Itaú"
+  providerName   String // Ex: "Nubank", "Itaú"
   externalItemId String    @unique // ID da conexão na API (item_id na Pluggy)
-  status         String    // "UPDATED", "LOGIN_REQUIRED"
+  status         String // "UPDATED", "LOGIN_REQUIRED"
   lastSyncAt     DateTime?
-  
-  accounts       BankAccount[] // Uma conexão tem várias contas
+
+  accounts BankAccount[] // Uma conexão tem várias contas
 }
 
 // ENUMS
@@ -382,9 +399,9 @@ enum TransactionType {
 
 // ENUMS NOVOS
 enum TransactionStatus {
-  PENDING   // Transação iniciada mas não finalizada (ex: pix agendado)
+  PENDING // Transação iniciada mas não finalizada (ex: pix agendado)
   CONFIRMED // Transação real, confirmada no extrato
-  PLANNED   // Transação futura projetada (Previsão)
+  PLANNED // Transação futura projetada (Previsão)
 }
 
 enum InvoiceStatus {
@@ -420,7 +437,7 @@ enum InvestmentMovementType {
 
 enum LoanType {
   BORROWED // Eu peguei emprestado (Passivo)
-  LENT     // Eu emprestei (Ativo)
+  LENT // Eu emprestei (Ativo)
 }
 
 enum LoanStatus {

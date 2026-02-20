@@ -6,8 +6,9 @@ import { useDebouncedCallback } from "use-debounce";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DateFilter } from "../dashboard/DateFilter";
+import { BankAccount } from "@prisma/client";
 
-export function TransactionFilters() {
+export function TransactionFilters({ accounts }: { accounts: BankAccount[] }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
@@ -48,6 +49,22 @@ export function TransactionFilters() {
           <SelectItem value="all">Todos os Tipos</SelectItem>
           <SelectItem value="INCOME">Receita</SelectItem>
           <SelectItem value="EXPENSE">Despesa</SelectItem>
+          <SelectItem value="TRANSFER">Transferência</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        onValueChange={(value) => handleFilterChange('account', value)}
+        defaultValue={searchParams.get('account') || 'all'}
+      >
+        <SelectTrigger className="w-full md:w-[180px]">
+          <SelectValue placeholder="Filtrar por conta" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todas as Contas</SelectItem>
+          {accounts.map(account => (
+            <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
       <DateFilter />

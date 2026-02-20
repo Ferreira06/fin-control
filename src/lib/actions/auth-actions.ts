@@ -48,7 +48,6 @@ export async function register(formData: FormData) {
   const validatedFields = registerSchema.safeParse(rawData);
 
   if (!validatedFields.success) {
-    // CORREÇÃO: Use .issues[0].message em vez de .errors[0].message
     return { 
       success: false, 
       message: validatedFields.error.issues[0].message 
